@@ -27,9 +27,17 @@ class _CreateContentScreenState extends State<CreateContentScreen> {
 
   // Form values
   String? _selectedGrade;
+  String? _selectedTextbook;
   String? _selectedSubject;
   String? _selectedDifficulty = 'Trung bình';
   String? _selectedTeachingStyle = 'Thân thiện';
+
+  // Textbook options
+  final List<String> _textbookOptions = [
+    'Kết nối tri thức với cuộc sống',
+    'Chân trời sáng tạo',
+    'Cánh Diều',
+  ];
 
   // Content types
   final List<String> _selectedContentTypes = [];
@@ -93,6 +101,7 @@ class _CreateContentScreenState extends State<CreateContentScreen> {
       grade: _selectedGrade!,
       subject: _selectedSubject!,
       topic: _topicController.text.trim(),
+      textbook: _selectedTextbook,
       duration: _durationController.text.trim(),
       contentTypes: _selectedContentTypes,
       teachingStyle: _selectedTeachingStyle,
@@ -152,7 +161,6 @@ class _CreateContentScreenState extends State<CreateContentScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Tạo nội dung mới'),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
           onPressed: () => Navigator.pop(context),
@@ -191,6 +199,26 @@ class _CreateContentScreenState extends State<CreateContentScreen> {
                   validator: (value) {
                     if (value == null) return 'Vui lòng chọn khối lớp';
                     return null;
+                  },
+                ),
+                const SizedBox(height: 16),
+
+                // Textbook (NEW POSITION)
+                DropdownButtonFormField<String>(
+                  value: _selectedTextbook,
+                  decoration: const InputDecoration(
+                    labelText: 'Bộ sách giáo khoa',
+                    prefixIcon: Icon(Icons.menu_book),
+                    helperText: 'Tùy chọn - Để trống nếu không cần',
+                  ),
+                  items: _textbookOptions.map((textbook) {
+                    return DropdownMenuItem(
+                      value: textbook,
+                      child: Text(textbook),
+                    );
+                  }).toList(),
+                  onChanged: (value) {
+                    setState(() => _selectedTextbook = value);
                   },
                 ),
                 const SizedBox(height: 16),

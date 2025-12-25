@@ -1,105 +1,68 @@
+// screens/chat_edu_screen.dart
+import 'dart:async';
+import 'dart:io';
+import 'package:edu_agent/models/chat_message_edu.dart';
+import 'package:edu_agent/screens/chat/widgets/chat_bubble_edu.dart';
+import 'package:edu_agent/screens/chat/widgets/chat_input_edu.dart';
+import 'package:edu_agent/services/gemini_chat_service.dart';
 import 'package:flutter/material.dart';
-import '../../services/api_service.dart';
-import '../../utils/constants.dart';
-import 'widgets/message_bubble.dart';
-import 'widgets/chat_input.dart';
-import 'widgets/typing_indicator.dart';
+import 'package:image_picker/image_picker.dart';
 
-class ChatScreenNew extends StatefulWidget {
-  const ChatScreenNew({Key? key}) : super(key: key);
+
+class ChatEduScreen extends StatefulWidget {
+  const ChatEduScreen({Key? key}) : super(key: key);
 
   @override
-  State<ChatScreenNew> createState() => _ChatScreenNewState();
+  State<ChatEduScreen> createState() => _ChatEduScreenState();
 }
 
-class _ChatScreenNewState extends State<ChatScreenNew> {
-  final ApiService _apiService = ApiService();
-  final TextEditingController _messageController = TextEditingController();
+class _ChatEduScreenState extends State<ChatEduScreen> {
+  final TextEditingController _controller = TextEditingController();
   final ScrollController _scrollController = ScrollController();
-  final List<ChatMessage> _messages = [];
-  bool _isTyping = false;
+  final ImagePicker _picker = ImagePicker();
+  final GeminiChatService _chatService = GeminiChatService();
+
+  final List<ChatMessageEdu> _messages = [];
+  File? _pendingImage;
+  bool _isLoading = false;
+  StreamSubscription? _currentStreamSubscription; // Thêm để quản lý stream
 
   @override
   void initState() {
     super.initState();
     _addWelcomeMessage();
+    // Thêm listener để cập nhật UI khi text thay đổi
+    _controller.addListener(() {
+      setState(() {});
+    });
   }
 
   @override
   void dispose() {
-    _messageController.dispose();
+    _currentStreamSubscription?.cancel();
+    _controller.dispose();
     _scrollController.dispose();
     super.dispose();
   }
 
   void _addWelcomeMessage() {
     setState(() {
-      _messages.add(ChatMessage(
-        text: 'Xin chào! Tôi là trợ lý AI giảng dạy của bạn. '
-            'Tôi có thể giúp bạn:\n\n'
-            '• Tạo kế hoạch bài giảng\n'
-            '• Soạn câu hỏi quiz\n'
-            '• Thiết kế slide bài giảng\n'
-            '• Tư vấn phương pháp giảng dạy\n\n'
-            'Bạn cần giúp gì hôm nay?',
+      _messages.add(ChatMessageEdu(
+        text: "👋 Xin chào! Tôi là trợ lý AI giảng dạy của bạn.\n\n"
+            "📚 Tôi có thể giúp bạn:\n"
+            "• Tạo kế hoạch bài giảng\n"
+            "• Soạn câu hỏi quiz\n"
+            "• Thiết kế slide bài giảng\n"
+            "• Tư vấn phương pháp giảng dạy\n"
+            "• Phân tích hình ảnh giáo dục\n\n"
+            "📸 Bạn cũng có thể gửi ảnh để tôi phân tích!",
         isUser: false,
         timestamp: DateTime.now(),
       ));
     });
   }
 
-  Future<void> _sendMessage(String text) async {
-    if (text.trim().isEmpty) return;
-
-    // Add user message
-    setState(() {
-      _messages.add(ChatMessage(
-        text: text.trim(),
-        isUser: true,
-        timestamp: DateTime.now(),
-      ));
-      _isTyping = true;
-    });
-
-    _messageController.clear();
-    _scrollToBottom();
-
-    // Send to API
-    try {
-      final response = await _apiService.sendChatMessage(text.trim());
-
-      setState(() {
-        _isTyping = false;
-        if (response != null) {
-          _messages.add(ChatMessage(
-            text: response,
-            isUser: false,
-            timestamp: DateTime.now(),
-          ));
-        } else {
-          _messages.add(ChatMessage(
-            text: 'Xin lỗi, tôi không thể xử lý yêu cầu của bạn lúc này. '
-                'Vui lòng thử lại sau.',
-            isUser: false,
-            timestamp: DateTime.now(),
-          ));
-        }
-      });
-
-      _scrollToBottom();
-    } catch (e) {
-      setState(() {
-        _isTyping = false;
-        _messages.add(ChatMessage(
-          text: 'Có lỗi xảy ra: $e',
-          isUser: false,
-          timestamp: DateTime.now(),
-        ));
-      });
-    }
-  }
-
-  void _scrollToBottom() {
+  void _scrollDown() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_scrollController.hasClients) {
         _scrollController.animateTo(
@@ -111,168 +74,113 @@ class _ChatScreenNewState extends State<ChatScreenNew> {
     });
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      body: Column(
-        children: [
-          // Chat Header
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.05),
-                  blurRadius: 10,
-                  offset: const Offset(0, 2),
+  // Thêm hàm dừng streaming
+  void _stopStreaming() {
+    _currentStreamSubscription?.cancel();
+    _currentStreamSubscription = null;
+    if (mounted) {
+      setState(() {
+        _isLoading = false;
+        // Đánh dấu tin nhắn cuối cùng là đã hoàn thành
+        if (_messages.isNotEmpty && !_messages.last.isUser) {
+          final lastIndex = _messages.length - 1;
+          _messages[lastIndex] = _messages[lastIndex].copyWith(
+            isStreaming: false,
+          );
+        }
+      });
+    }
+  }
+
+  void _showImageSourceDialog() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) => Container(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        padding: const EdgeInsets.all(24),
+        child: SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(2),
                 ),
-              ],
-            ),
-            child: Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [AppColors.primary, AppColors.primaryDark],
+              ),
+              const SizedBox(height: 24),
+              const Text(
+                "Chọn nguồn ảnh",
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 24),
+              Row(
+                children: [
+                  Expanded(
+                    child: _buildImageSourceOption(
+                      icon: Icons.camera_alt,
+                      label: "Máy ảnh",
+                      color: Colors.blue,
+                      onTap: () {
+                        Navigator.pop(context);
+                        _pickImage(ImageSource.camera);
+                      },
                     ),
-                    shape: BoxShape.circle,
                   ),
-                  child: const Icon(
-                    Icons.smart_toy,
-                    color: Colors.white,
-                    size: 24,
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: _buildImageSourceOption(
+                      icon: Icons.photo_library,
+                      label: "Thư viện",
+                      color: Colors.green,
+                      onTap: () {
+                        Navigator.pop(context);
+                        _pickImage(ImageSource.gallery);
+                      },
+                    ),
                   ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Trợ lý AI',
-                        style: AppTextStyles.body1.copyWith(
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Row(
-                        children: [
-                          Container(
-                            width: 8,
-                            height: 8,
-                            decoration: const BoxDecoration(
-                              color: AppColors.success,
-                              shape: BoxShape.circle,
-                            ),
-                          ),
-                          const SizedBox(width: 6),
-                          Text(
-                            'Đang online',
-                            style: AppTextStyles.caption.copyWith(
-                              color: AppColors.textSecondary,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.more_vert),
-                  onPressed: () {
-                    _showChatOptions();
-                  },
-                ),
-              ],
-            ),
+                ],
+              ),
+            ],
           ),
-
-          // Messages List
-          Expanded(
-            child: ListView.builder(
-              controller: _scrollController,
-              padding: const EdgeInsets.all(16),
-              itemCount: _messages.length + (_isTyping ? 1 : 0),
-              itemBuilder: (context, index) {
-                if (index == _messages.length && _isTyping) {
-                  return const TypingIndicator();
-                }
-                return MessageBubble(message: _messages[index]);
-              },
-            ),
-          ),
-
-          // Quick Actions
-          if (_messages.length <= 1) _buildQuickActions(),
-
-          // Chat Input
-          ChatInput(
-            controller: _messageController,
-            onSend: _sendMessage,
-            enabled: !_isTyping,
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildQuickActions() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Row(
-          children: [
-            _buildQuickActionChip(
-              'Tạo kế hoạch bài giảng',
-              Icons.article,
-            ),
-            const SizedBox(width: 8),
-            _buildQuickActionChip(
-              'Tạo câu hỏi quiz',
-              Icons.quiz,
-            ),
-            const SizedBox(width: 8),
-            _buildQuickActionChip(
-              'Thiết kế slide',
-              Icons.slideshow,
-            ),
-            const SizedBox(width: 8),
-            _buildQuickActionChip(
-              'Tư vấn phương pháp',
-              Icons.lightbulb,
-            ),
-          ],
         ),
       ),
     );
   }
 
-  Widget _buildQuickActionChip(String label, IconData icon) {
+  Widget _buildImageSourceOption({
+    required IconData icon,
+    required String label,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
     return InkWell(
-      onTap: () {
-        _sendMessage(label);
-      },
-      borderRadius: BorderRadius.circular(20),
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(16),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
-          color: AppColors.primary.withOpacity(0.1),
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: AppColors.primary.withOpacity(0.3)),
+          color: color.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: color.withOpacity(0.3)),
         ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
+        child: Column(
           children: [
-            Icon(icon, size: 18, color: AppColors.primary),
-            const SizedBox(width: 6),
+            Icon(icon, color: color, size: 32),
+            const SizedBox(height: 8),
             Text(
               label,
-              style: AppTextStyles.caption.copyWith(
-                color: AppColors.primary,
+              style: TextStyle(
+                color: color,
                 fontWeight: FontWeight.w600,
               ),
             ),
@@ -282,35 +190,208 @@ class _ChatScreenNewState extends State<ChatScreenNew> {
     );
   }
 
-  void _showChatOptions() {
-    showModalBottomSheet(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (context) => Container(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.delete_outline, color: AppColors.error),
-              title: const Text('Xóa lịch sử chat'),
-              onTap: () {
-                Navigator.pop(context);
-                _clearChat();
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.share),
-              title: const Text('Chia sẻ cuộc trò chuyện'),
-              onTap: () {
-                Navigator.pop(context);
-                // TODO: Implement share
-              },
-            ),
-          ],
-        ),
+  Future<void> _pickImage(ImageSource source) async {
+    try {
+      final XFile? picked = await _picker.pickImage(
+        source: source,
+        maxWidth: 1024,
+        maxHeight: 1024,
+        imageQuality: 85,
+      );
+
+      if (picked != null) {
+        setState(() {
+          _pendingImage = File(picked.path);
+        });
+      }
+    } catch (e) {
+      _showError('Không thể chọn ảnh: $e');
+    }
+  }
+
+  Future<void> _handleSend() async {
+    final text = _controller.text.trim();
+    final image = _pendingImage;
+
+    // Allow sending if either text or image exists
+    if ((text.isEmpty && image == null) || _isLoading) return;
+
+    // Hủy stream hiện tại nếu có
+    _currentStreamSubscription?.cancel();
+
+    // Add user message
+    setState(() {
+      _messages.add(ChatMessageEdu(
+        text: text,
+        isUser: true,
+        timestamp: DateTime.now(),
+        image: image,
+      ));
+      _pendingImage = null;
+      _isLoading = true;
+    });
+
+    _controller.clear();
+    _scrollDown();
+
+    // Handle based on what user sent
+    if (image != null) {
+      // If there's an image, analyze it (with or without text prompt)
+      await _handleImageMessage(image, text.isEmpty ? "Phân tích ảnh này" : text);
+    } else {
+      // Only text message
+      await _handleTextMessage(text);
+    }
+  }
+
+  Future<void> _handleImageMessage(File image, String prompt) async {
+    final botIndex = _messages.length;
+    setState(() {
+      _messages.add(ChatMessageEdu(
+        text: "",
+        isUser: false,
+        timestamp: DateTime.now(),
+        image: image,
+        isStreaming: true,
+      ));
+    });
+
+    final buffer = StringBuffer();
+
+    try {
+      final stream = _chatService.streamImageAnalysis(image, prompt);
+
+      // Lưu subscription để có thể cancel
+      _currentStreamSubscription = stream.listen(
+            (chunk) {
+          buffer.write(chunk);
+
+          // Update UI theo từng chunk nhận được
+          if (mounted && _messages.length > botIndex) {
+            setState(() {
+              _messages[botIndex] = _messages[botIndex].copyWith(
+                text: buffer.toString(),
+              );
+            });
+            _scrollDown();
+          }
+        },
+        onDone: () {
+          // Mark as complete
+          if (mounted && _messages.length > botIndex) {
+            setState(() {
+              _messages[botIndex] = _messages[botIndex].copyWith(
+                text: buffer.toString(),
+                isStreaming: false,
+              );
+              _isLoading = false;
+            });
+          }
+        },
+        onError: (e) {
+          if (mounted && _messages.length > botIndex) {
+            setState(() {
+              _messages[botIndex] = ChatMessageEdu(
+                text: '❌ Lỗi phân tích ảnh: $e',
+                isUser: false,
+                timestamp: DateTime.now(),
+              );
+              _isLoading = false;
+            });
+          }
+        },
+        cancelOnError: true,
+      );
+    } catch (e) {
+      if (mounted && _messages.length > botIndex) {
+        setState(() {
+          _messages[botIndex] = ChatMessageEdu(
+            text: '❌ Lỗi phân tích ảnh: $e',
+            isUser: false,
+            timestamp: DateTime.now(),
+          );
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _handleTextMessage(String text) async {
+    final botIndex = _messages.length;
+    setState(() {
+      _messages.add(ChatMessageEdu(
+        text: "",
+        isUser: false,
+        timestamp: DateTime.now(),
+        isStreaming: true,
+      ));
+    });
+
+    final buffer = StringBuffer();
+
+    try {
+      final stream = _chatService.streamTextResponse(text);
+
+      // Lưu subscription để có thể cancel
+      _currentStreamSubscription = stream.listen(
+            (chunk) {
+          buffer.write(chunk);
+
+          // Update UI theo từng chunk nhận được
+          if (mounted && _messages.length > botIndex) {
+            setState(() {
+              _messages[botIndex] = _messages[botIndex].copyWith(
+                text: buffer.toString(),
+              );
+            });
+            _scrollDown();
+          }
+        },
+        onDone: () {
+          // Mark as complete
+          if (mounted && _messages.length > botIndex) {
+            setState(() {
+              _messages[botIndex] = _messages[botIndex].copyWith(
+                text: buffer.toString(),
+                isStreaming: false,
+              );
+              _isLoading = false;
+            });
+          }
+        },
+        onError: (e) {
+          if (mounted && _messages.length > botIndex) {
+            setState(() {
+              _messages[botIndex] = ChatMessageEdu(
+                text: '❌ Lỗi: $e',
+                isUser: false,
+                timestamp: DateTime.now(),
+              );
+              _isLoading = false;
+            });
+          }
+        },
+        cancelOnError: true,
+      );
+    } catch (e) {
+      if (mounted && _messages.length > botIndex) {
+        setState(() {
+          _messages[botIndex] = ChatMessageEdu(
+            text: '❌ Lỗi: $e',
+            isUser: false,
+            timestamp: DateTime.now(),
+          );
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  void _showError(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.red,
       ),
     );
   }
@@ -328,30 +409,152 @@ class _ChatScreenNewState extends State<ChatScreenNew> {
           ),
           TextButton(
             onPressed: () {
+              _currentStreamSubscription?.cancel();
               setState(() {
                 _messages.clear();
                 _addWelcomeMessage();
+                _isLoading = false;
               });
               Navigator.pop(context);
             },
-            style: TextButton.styleFrom(foregroundColor: AppColors.error),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
             child: const Text('Xóa'),
           ),
         ],
       ),
     );
   }
-}
 
-// Chat Message Model
-class ChatMessage {
-  final String text;
-  final bool isUser;
-  final DateTime timestamp;
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.grey[50],
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        elevation: 0.5,
+        title: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [Color(0xFF6F47EB), Color(0xFF8B5CF6)],
+                ),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(Icons.school, color: Colors.white, size: 20),
+            ),
+            const SizedBox(width: 12),
+            const Text(
+              "Trợ lý AI",
+              style: TextStyle(
+                color: Colors.black87,
+                fontWeight: FontWeight.bold,
+                fontSize: 18,
+              ),
+            ),
+          ],
+        ),
+        centerTitle: true,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.delete_outline, color: Colors.black87),
+            onPressed: _clearChat,
+          ),
+        ],
+      ),
+      body: Column(
+        children: [
+          // Messages list
+          Expanded(
+            child: ListView.builder(
+              controller: _scrollController,
+              padding: const EdgeInsets.all(16),
+              itemCount: _messages.length,
+              itemBuilder: (context, index) {
+                return ChatBubbleEdu(message: _messages[index]);
+              },
+            ),
+          ),
 
-  ChatMessage({
-    required this.text,
-    required this.isUser,
-    required this.timestamp,
-  });
+          // Quick actions (show only if few messages)
+          if (_messages.length <= 2) _buildQuickActions(),
+
+          // Input area
+          ChatInputEdu(
+            controller: _controller,
+            isLoading: _isLoading,
+            pendingImage: _pendingImage,
+            onSend: _handleSend,
+            onStop: _stopStreaming, // Thêm callback dừng
+            onCameraTap: _showImageSourceDialog,
+            onRemoveImage: () => setState(() => _pendingImage = null),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildQuickActions() {
+    final actions = [
+      {'icon': Icons.article, 'label': 'Tạo kế hoạch bài giảng'},
+      {'icon': Icons.quiz, 'label': 'Tạo câu hỏi quiz'},
+      {'icon': Icons.slideshow, 'label': 'Thiết kế slide'},
+      {'icon': Icons.lightbulb, 'label': 'Tư vấn phương pháp'},
+    ];
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: actions.map((action) {
+            return Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: InkWell(
+                onTap: () {
+                  _controller.text = action['label'] as String;
+                  _handleSend();
+                },
+                borderRadius: BorderRadius.circular(20),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 10,
+                  ),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF6F47EB).withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: const Color(0xFF6F47EB).withOpacity(0.3),
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        action['icon'] as IconData,
+                        size: 18,
+                        color: const Color(0xFF6F47EB),
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        action['label'] as String,
+                        style: const TextStyle(
+                          color: Color(0xFF6F47EB),
+                          fontWeight: FontWeight.w600,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          }).toList(),
+        ),
+      ),
+    );
+  }
 }

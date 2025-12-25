@@ -24,7 +24,7 @@ class _MainScreenState extends State<MainScreen> {
     const NewHomeScreen(),
     const CreateContentScreen(),
     const LibraryScreen(),
-    const ChatScreenNew(),
+    const ChatEduScreen(),
   ];
 
   final List<String> _pageTitles = [

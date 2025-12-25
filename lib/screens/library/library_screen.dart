@@ -1,4 +1,7 @@
 import 'package:edu_agent/models/content_request.dart';
+import 'package:edu_agent/screens/content_detail/lesson_detail_screen.dart';
+import 'package:edu_agent/screens/content_detail/quiz_detail_screen.dart';
+import 'package:edu_agent/screens/content_detail/slide_detail_screen.dart';
 import 'package:edu_agent/widgets/loading_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -7,6 +10,7 @@ import '../../utils/constants.dart';
 import '../../services/download_service.dart';
 import 'widgets/content_list_item.dart';
 import 'widgets/filter_sheet.dart';
+
 
 class LibraryScreen extends StatefulWidget {
   const LibraryScreen({Key? key}) : super(key: key);
@@ -205,12 +209,106 @@ class _LibraryScreenState extends State<LibraryScreen>
     );
   }
 
-  void _viewContent(SavedContent content) {
-    Navigator.pushNamed(
-      context,
-      '/content-detail',
-      arguments: content,
+  Future<void> _viewContent(SavedContent content) async {
+    // Show loading dialog
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(
+        child: Card(
+          child: Padding(
+            padding: EdgeInsets.all(20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(),
+                SizedBox(height: 16),
+                Text('Đang tải nội dung...'),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
+
+    try {
+      final provider = context.read<ContentProvider>();
+
+      // Load content based on type
+      if (content.type == AppConstants.lessonPlan) {
+        final markdownContent = await provider.loadLessonPlanContent(content.id);
+
+        // Hide loading
+        if (mounted) Navigator.pop(context);
+
+        // Navigate to lesson detail screen
+        if (mounted) {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => LessonDetailScreen(
+                content: content,
+                markdownContent: markdownContent,
+              ),
+            ),
+          );
+        }
+      } else if (content.type == AppConstants.quiz) {
+        final quizData = await provider.loadQuizContent(content.id);
+
+        // Hide loading
+        if (mounted) Navigator.pop(context);
+
+        // Navigate to quiz detail screen
+        if (mounted) {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => QuizDetailScreen(
+                content: content,
+                quizData: quizData,
+              ),
+            ),
+          );
+        }
+      } else if (content.type == AppConstants.slidePlan) {
+        final slideContent = await provider.loadSlideContent(content.id);
+
+        // Hide loading
+        if (mounted) Navigator.pop(context);
+
+        // Navigate to slide detail screen
+        if (mounted) {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => SlideDetailScreen(
+                content: content,
+                slideContent: slideContent,
+              ),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      // Hide loading
+      if (mounted) Navigator.pop(context);
+
+      // Show error
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Không thể tải nội dung: $e'),
+            backgroundColor: Colors.red,
+            action: SnackBarAction(
+              label: 'Thử lại',
+              textColor: Colors.white,
+              onPressed: () => _viewContent(content),
+            ),
+          ),
+        );
+      }
+    }
   }
 
   Future<void> _downloadContent(SavedContent content) async {

@@ -1,6 +1,10 @@
+import 'dart:convert';
+
 import 'package:edu_agent/models/content_request.dart';
 import 'package:edu_agent/services/notification_service.dart';
+import 'package:edu_agent/utils/constants.dart';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 
 import '../services/api_service.dart';
 import '../services/storage_service.dart';
@@ -230,4 +234,61 @@ class ContentProvider with ChangeNotifier {
       );
     }
   }
+  /// Load lesson plan content from server
+  Future<String> loadLessonPlanContent(String contentId) async {
+    try {
+      final content = _recentContents.firstWhere((c) => c.id == contentId);
+      final url = Uri.parse('${AppConstants.baseUrl}/api/download/lesson/${content.filename}');
+
+      final response = await http.get(url);
+
+      if (response.statusCode == 200) {
+        return utf8.decode(response.bodyBytes);
+      } else {
+        throw Exception('Failed to load lesson plan: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('Error loading lesson plan: $e');
+      rethrow;
+    }
+  }
+
+  /// Load quiz content from server
+  Future<Map<String, dynamic>> loadQuizContent(String contentId) async {
+    try {
+      final content = _recentContents.firstWhere((c) => c.id == contentId);
+      final url = Uri.parse('${AppConstants.baseUrl}/api/download/quiz/${content.filename}');
+
+      final response = await http.get(url);
+
+      if (response.statusCode == 200) {
+        return json.decode(utf8.decode(response.bodyBytes));
+      } else {
+        throw Exception('Failed to load quiz: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('Error loading quiz: $e');
+      rethrow;
+    }
+  }
+
+  /// Load slide content from server
+  Future<String> loadSlideContent(String contentId) async {
+    try {
+      final content = _recentContents.firstWhere((c) => c.id == contentId);
+      final url = Uri.parse('${AppConstants.baseUrl}/api/download/slide/${content.filename}');
+
+      final response = await http.get(url);
+
+      if (response.statusCode == 200) {
+        return utf8.decode(response.bodyBytes);
+      } else {
+        throw Exception('Failed to load slide: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('Error loading slide: $e');
+      rethrow;
+    }
+  }
+
 }

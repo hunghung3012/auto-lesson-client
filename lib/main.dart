@@ -1,4 +1,6 @@
+import 'package:edu_agent/models/content_request.dart';
 import 'package:edu_agent/screens/chat/chat_screen.dart';
+import 'package:edu_agent/screens/content_detail/lesson_detail_screen.dart';
 import 'package:edu_agent/screens/settings/settings_screen.dart';
 import 'package:edu_agent/services/notification_service.dart';
 import 'package:flutter/material.dart';
@@ -179,8 +181,12 @@ class EduMateApp extends StatelessWidget {
             '/': (context) => const MainScreen(initialIndex: 0),
             '/create-content': (context) => const CreateContentScreen(),
             '/library': (context) => const LibraryScreen(),
-            '/chat': (context) => const ChatScreenNew(),
+            '/chat': (context) => const ChatEduScreen(),
             '/settings': (context) => SettingsScreen(),
+            // '/content-detail': (context) {
+            //   final content = ModalRoute.of(context)!.settings.arguments as SavedContent;
+            //   return ContentDetailScreen(content: content);
+            // },
           },
         );
       },
