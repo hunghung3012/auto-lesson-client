@@ -1,8 +1,14 @@
+import 'dart:convert';
 import 'package:edu_agent/models/content_request.dart';
-import 'package:edu_agent/screens/chat/chat_screen.dart';
+
 import 'package:edu_agent/screens/content_detail/lesson_detail_screen.dart';
+import 'package:edu_agent/screens/content_detail/quiz_detail.dart';
+import 'package:edu_agent/screens/content_detail/quiz_detail_screen.dart';
+import 'package:edu_agent/screens/content_detail/slide_detail_screen.dart';
+import 'package:edu_agent/screens/login/login.dart';
 import 'package:edu_agent/screens/settings/settings_screen.dart';
 import 'package:edu_agent/services/notification_service.dart';
+import 'package:edu_agent/utils/json_utils.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:provider/provider.dart';
@@ -24,6 +30,32 @@ import 'screens/library/library_screen.dart';
 
 // Utils
 import 'utils/constants.dart';
+
+// Helper function to recursively convert Map<dynamic, dynamic> to Map<String, dynamic>
+Map<String, dynamic> _convertToStringKeyMap(Map map) {
+  final result = <String, dynamic>{};
+
+  map.forEach((key, value) {
+    final stringKey = key.toString();
+
+    if (value is Map) {
+      // Recursively convert nested maps
+      result[stringKey] = _convertToStringKeyMap(value);
+    } else if (value is List) {
+      // Convert list items if they are maps
+      result[stringKey] = value.map((item) {
+        if (item is Map) {
+          return _convertToStringKeyMap(item);
+        }
+        return item;
+      }).toList();
+    } else {
+      result[stringKey] = value;
+    }
+  });
+
+  return result;
+}
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -104,89 +136,119 @@ class EduMateApp extends StatelessWidget {
           title: 'EduMate - AI Teaching Assistant',
           debugShowCheckedModeBanner: false,
 
-          // Light Theme
+          // ✅ Light Theme
           theme: ThemeData(
             useMaterial3: true,
-            fontFamily: 'Inter',
+            brightness: Brightness.light,
             colorScheme: ColorScheme.fromSeed(
               seedColor: AppColors.primary,
               brightness: Brightness.light,
             ),
-            scaffoldBackgroundColor: AppColors.background,
+            scaffoldBackgroundColor: Colors.grey[50],
             appBarTheme: const AppBarTheme(
               backgroundColor: Colors.white,
+              foregroundColor: Colors.black,
               elevation: 0,
-              centerTitle: false,
-              iconTheme: IconThemeData(color: AppColors.primary),
-              titleTextStyle: TextStyle(
-                color: AppColors.primary,
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-              ),
+              centerTitle: true,
             ),
-            inputDecorationTheme: InputDecorationTheme(
-              filled: true,
-              fillColor: Colors.grey[50],
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: Colors.grey[300]!),
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: Colors.grey[300]!),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: const BorderSide(
-                  color: AppColors.primary,
-                  width: 2,
-                ),
-              ),
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 16,
-                vertical: 16,
-              ),
-            ),
-            elevatedButtonTheme: ElevatedButtonThemeData(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.primary,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 24,
-                  vertical: 14,
-                ),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                elevation: 0,
+            cardTheme: CardThemeData(
+              color: Colors.white,
+              elevation: 2,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
               ),
             ),
           ),
 
-          // Dark Theme
+          // ✅ Dark Theme
           darkTheme: ThemeData(
             useMaterial3: true,
-            fontFamily: 'Inter',
+            brightness: Brightness.dark,
             colorScheme: ColorScheme.fromSeed(
               seedColor: AppColors.primary,
               brightness: Brightness.dark,
             ),
+            scaffoldBackgroundColor: const Color(0xFF121212),
+            appBarTheme: const AppBarTheme(
+              backgroundColor: Color(0xFF1E1E1E),
+              foregroundColor: Colors.white,
+              elevation: 0,
+              centerTitle: true,
+            ),
+            cardTheme: CardThemeData(
+              color: const Color(0xFF1E1E1E),
+              elevation: 2,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+            ),
           ),
 
+          // ✅ Theme Mode từ Provider
           themeMode: themeProvider.themeMode,
 
-          // Routes
-          initialRoute: '/',
+          initialRoute: '/login',
+
           routes: {
+            '/login': (context) => const LoginScreen(),
             '/': (context) => const MainScreen(initialIndex: 0),
-            '/create-content': (context) => const CreateContentScreen(),
-            '/library': (context) => const LibraryScreen(),
-            '/chat': (context) => const ChatEduScreen(),
             '/settings': (context) => SettingsScreen(),
-            // '/content-detail': (context) {
-            //   final content = ModalRoute.of(context)!.settings.arguments as SavedContent;
-            //   return ContentDetailScreen(content: content);
-            // },
+            '/content-detail': (context) {
+              final content = ModalRoute.of(context)!.settings.arguments as SavedContent;
+
+              print('📍 Navigation to content detail:');
+              print('  Type: ${content.type}');
+              print('  Title: ${content.title}');
+              print('  Content length: ${content.content?.length ?? 0}');
+
+              // ✅ LESSON PLAN
+              if (content.type == AppConstants.lessonPlan) {
+                print('  ➡️ Navigating to LessonDetailScreen');
+                return LessonDetailScreen(
+                  content: content,
+                  markdownContent: content.content ?? '',
+                );
+              }
+
+              else if (content.type == AppConstants.quiz) {
+                return QuizDetailSecond();
+              }
+
+              // ✅ SLIDE
+              else if (content.type == AppConstants.slidePlan) {
+                return SlideDetailSecond();
+              }
+
+              // ❌ Fallback nếu type không khớp
+              return Scaffold(
+                appBar: AppBar(title: const Text('Lỗi')),
+                body: Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.error_outline, size: 64, color: Colors.red),
+                      const SizedBox(height: 16),
+                      Text(
+                        'Không tìm thấy loại nội dung phù hợp',
+                        style: AppTextStyles.body1,
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Type: ${content.type}',
+                        style: AppTextStyles.caption.copyWith(
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      ElevatedButton(
+                        onPressed: () => Navigator.pop(context),
+                        child: const Text('Quay lại'),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
           },
         );
       },

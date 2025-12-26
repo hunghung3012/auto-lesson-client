@@ -2,6 +2,8 @@ import 'package:edu_agent/providers/notification_provider.dart';
 import 'package:edu_agent/providers/theme_provider.dart';
 import 'package:edu_agent/widgets/loading_dialog.dart';
 import 'package:flutter/material.dart';
+import 'dart:io';
+import 'package:path_provider/path_provider.dart';
 
 import '../../providers/content_provider.dart';
 import '../../services/storage_service.dart';
@@ -16,6 +18,12 @@ class SettingsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Lấy theme hiện tại để áp dụng màu
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+    final cardColor = isDarkMode ? const Color(0xFF1E1E1E) : Colors.white;
+    final dividerColor = isDarkMode ? Colors.grey[800] : Colors.grey[300];
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Cài đặt'),
@@ -28,6 +36,8 @@ class SettingsScreen extends StatelessWidget {
             context,
             title: 'Thông tin ứng dụng',
             icon: Icons.info_outline,
+            cardColor: cardColor,
+            dividerColor: dividerColor,
             children: [
               _buildInfoTile(
                 context,
@@ -44,6 +54,8 @@ class SettingsScreen extends StatelessWidget {
             context,
             title: 'Giao diện',
             icon: Icons.palette_outlined,
+            cardColor: cardColor,
+            dividerColor: dividerColor,
             children: [
               Consumer<ThemeProvider>(
                 builder: (context, themeProvider, child) {
@@ -68,6 +80,8 @@ class SettingsScreen extends StatelessWidget {
             context,
             title: 'Thông báo',
             icon: Icons.notifications_outlined,
+            cardColor: cardColor,
+            dividerColor: dividerColor,
             children: [
               Consumer<NotificationProvider>(
                 builder: (context, notifProvider, child) {
@@ -79,6 +93,34 @@ class SettingsScreen extends StatelessWidget {
                     value: notifProvider.isEnabled,
                     onChanged: (value) {
                       notifProvider.toggleNotification();
+
+                      // Hiển thị thông báo nhỏ
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Row(
+                            children: [
+                              Icon(
+                                value ? Icons.notifications_active : Icons.notifications_off,
+                                color: Colors.white,
+                                size: 20,
+                              ),
+                              const SizedBox(width: 12),
+                              Text(
+                                value
+                                    ? 'Đã bật thông báo'
+                                    : 'Đã tắt thông báo',
+                              ),
+                            ],
+                          ),
+                          backgroundColor: value ? AppColors.success : Colors.grey[700],
+                          duration: const Duration(seconds: 2),
+                          behavior: SnackBarBehavior.floating,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          margin: const EdgeInsets.all(16),
+                        ),
+                      );
                     },
                   );
                 },
@@ -92,6 +134,8 @@ class SettingsScreen extends StatelessWidget {
             context,
             title: 'Bộ nhớ',
             icon: Icons.storage_outlined,
+            cardColor: cardColor,
+            dividerColor: dividerColor,
             children: [
               FutureBuilder<Map<String, int>>(
                 future: context.read<ContentProvider>().getStatistics(),
@@ -124,6 +168,8 @@ class SettingsScreen extends StatelessWidget {
             context,
             title: 'Máy chủ',
             icon: Icons.cloud_outlined,
+            cardColor: cardColor,
+            dividerColor: dividerColor,
             children: [
               _buildInfoTile(
                 context,
@@ -147,6 +193,8 @@ class SettingsScreen extends StatelessWidget {
             context,
             title: 'Về chúng tôi',
             icon: Icons.help_outline,
+            cardColor: cardColor,
+            dividerColor: dividerColor,
             children: [
               _buildActionTile(
                 context,
@@ -174,6 +222,26 @@ class SettingsScreen extends StatelessWidget {
               ),
             ],
           ),
+          const SizedBox(height: 16),
+
+          // Logout Section
+          _buildSection(
+            context,
+            title: 'Tài khoản',
+            icon: Icons.account_circle_outlined,
+            cardColor: cardColor,
+            dividerColor: dividerColor,
+            children: [
+              _buildActionTile(
+                context,
+                icon: Icons.logout,
+                title: 'Đăng xuất',
+                subtitle: 'Thoát khỏi tài khoản hiện tại',
+                color: AppColors.error,
+                onTap: () => _confirmLogout(context),
+              ),
+            ],
+          ),
         ],
       ),
     );
@@ -184,14 +252,20 @@ class SettingsScreen extends StatelessWidget {
         required String title,
         required IconData icon,
         required List<Widget> children,
+        required Color cardColor,
+        required Color? dividerColor,
       }) {
+    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
+
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: cardColor,
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: isDarkMode
+                ? Colors.black.withOpacity(0.3)
+                : Colors.black.withOpacity(0.05),
             blurRadius: 10,
             offset: const Offset(0, 2),
           ),
@@ -215,7 +289,7 @@ class SettingsScreen extends StatelessWidget {
               ],
             ),
           ),
-          const Divider(height: 1),
+          Divider(height: 1, color: dividerColor),
           ...children,
         ],
       ),
@@ -252,13 +326,18 @@ class SettingsScreen extends StatelessWidget {
         Color? color,
         required VoidCallback onTap,
       }) {
+    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
+
     return ListTile(
       leading: Icon(icon, color: color ?? AppColors.primary),
       title: Text(title, style: AppTextStyles.body1),
       subtitle: subtitle != null
           ? Text(subtitle, style: AppTextStyles.caption)
           : null,
-      trailing: Icon(Icons.chevron_right, color: Colors.grey[400]),
+      trailing: Icon(
+        Icons.chevron_right,
+        color: isDarkMode ? Colors.grey[600] : Colors.grey[400],
+      ),
       onTap: onTap,
     );
   }
@@ -301,18 +380,24 @@ class SettingsScreen extends StatelessWidget {
       ),
     );
 
-    if (confirmed == true) {
+    if (confirmed == true && context.mounted) {
       LoadingDialog.show(context, message: 'Đang xóa...');
 
       await _storageService.clearAllContents();
-      await context.read<ContentProvider>().loadRecentContents();
+      if (context.mounted) {
+        await context.read<ContentProvider>().loadRecentContents();
+      }
 
-      LoadingDialog.hide(context);
+      if (context.mounted) {
+        LoadingDialog.hide(context);
+      }
 
-      SuccessDialog.show(
-        context,
-        message: 'Đã xóa tất cả nội dung',
-      );
+      if (context.mounted) {
+        SuccessDialog.show(
+          context,
+          message: 'Đã xóa tất cả nội dung',
+        );
+      }
     }
   }
 
@@ -321,21 +406,74 @@ class SettingsScreen extends StatelessWidget {
 
     final isHealthy = await context.read<ContentProvider>().checkServerHealth();
 
-    LoadingDialog.hide(context);
+    if (context.mounted) {
+      LoadingDialog.hide(context);
+    }
 
-    if (isHealthy) {
-      SuccessDialog.show(
-        context,
-        message: 'Kết nối thành công! Server đang hoạt động tốt.',
-      );
-    } else {
-      ErrorDialog.show(
-        context,
-        message: 'Không thể kết nối tới server. Vui lòng kiểm tra:\n'
-            '• Server có đang chạy không?\n'
-            '• Địa chỉ IP có đúng không?\n'
-            '• Kết nối mạng có ổn định không?',
-      );
+    if (context.mounted) {
+      if (isHealthy) {
+        SuccessDialog.show(
+          context,
+          message: 'Kết nối thành công! Server đang hoạt động tốt.',
+        );
+      } else {
+        ErrorDialog.show(
+          context,
+          message: 'Không thể kết nối tới server. Vui lòng kiểm tra:\n'
+              '• Server có đang chạy không?\n'
+              '• Địa chỉ IP có đúng không?\n'
+              '• Kết nối mạng có ổn định không?',
+        );
+      }
+    }
+  }
+
+  Future<void> _confirmLogout(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.logout, color: AppColors.error),
+            const SizedBox(width: 12),
+            const Text('Đăng xuất'),
+          ],
+        ),
+        content: const Text(
+          'Bạn có chắc muốn đăng xuất khỏi tài khoản?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Hủy'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(foregroundColor: AppColors.error),
+            child: const Text('Đăng xuất'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && context.mounted) {
+      // Hiển thị loading
+      LoadingDialog.show(context, message: 'Đang đăng xuất...');
+
+      // Giả lập thời gian xử lý
+      await Future.delayed(const Duration(milliseconds: 500));
+
+      if (context.mounted) {
+        LoadingDialog.hide(context);
+      }
+
+      // Chuyển về màn hình login và xóa toàn bộ navigation stack
+      if (context.mounted) {
+        Navigator.of(context).pushNamedAndRemoveUntil(
+          '/login',
+              (route) => false,
+        );
+      }
     }
   }
 }

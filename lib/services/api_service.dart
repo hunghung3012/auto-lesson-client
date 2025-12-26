@@ -1,9 +1,8 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:dio/dio.dart';
-import 'package:edu_agent/models/content_request.dart';
+import '../models/content_request.dart';
 import '../config/api_config.dart';
-
 
 class ApiService {
   static final ApiService _instance = ApiService._internal();
@@ -27,6 +26,7 @@ class ApiService {
       requestBody: true,
       responseBody: true,
       error: true,
+      logPrint: (obj) => print('🌐 API: $obj'),
     ));
   }
 
@@ -41,236 +41,75 @@ class ApiService {
     }
   }
 
-  // Process Content WITH POLLING (Recommended for long tasks)
-  Future<ContentResponse> processContentWithPolling(
-      ContentRequest request, {
-        Function(String)? onStatusUpdate,
-      }) async {
-    try {
-      // Step 1: Start async processing
-      final startResponse = await _startProcessing(request);
-
-      if (!startResponse['success']) {
-        return ContentResponse(
-          success: false,
-          error: startResponse['error'] ?? 'Failed to start processing',
-        );
-      }
-
-      final requestId = startResponse['request_id'];
-      onStatusUpdate?.call('Đã gửi yêu cầu. Đang xử lý...');
-
-      // Step 2: Poll for completion
-      return await _pollProcessingStatus(
-        requestId,
-        onStatusUpdate: onStatusUpdate,
-      );
-    } catch (e) {
-      print('❌ Error: $e');
-      return ContentResponse(
-        success: false,
-        error: 'Unexpected error: $e',
-      );
-    }
-  }
-
-  // Start Processing (Send request, get request_id)
-  Future<Map<String, dynamic>> _startProcessing(ContentRequest request) async {
-    try {
-      FormData formData = FormData();
-
-      // Add basic fields
-      formData.fields.add(MapEntry('grade', request.grade));
-      formData.fields.add(MapEntry('subject', request.subject));
-      formData.fields.add(MapEntry('topic', request.topic));
-      formData.fields.add(MapEntry('textbook', request.textbook ?? ''));
-      formData.fields.add(MapEntry('duration', request.duration ?? '45'));
-      formData.fields.add(MapEntry('teaching_style', request.teachingStyle ?? ''));
-      formData.fields.add(MapEntry('difficulty', request.difficulty ?? 'medium'));
-      formData.fields.add(MapEntry('additional_requirements', request.additionalRequirements ?? ''));
-
-      // Add content_types
-      for (var contentType in request.contentTypes) {
-        formData.fields.add(MapEntry('content_type[]', contentType));
-      }
-
-      // Add configs
-      if (request.quizConfig != null) {
-        formData.fields.add(MapEntry(
-          'quiz_config',
-          jsonEncode(request.quizConfig!.toJson()),
-        ));
-      }
-
-      if (request.slideConfig != null) {
-        formData.fields.add(MapEntry(
-          'slide_config',
-          jsonEncode(request.slideConfig!.toJson()),
-        ));
-      }
-
-      // Add files
-      if (request.files != null && request.files!.isNotEmpty) {
-        for (var file in request.files!) {
-          String fileName = file.path.split('/').last;
-          formData.files.add(MapEntry(
-            'files[]',
-            await MultipartFile.fromFile(file.path, filename: fileName),
-          ));
-        }
-      }
-
-      // Send to async endpoint (or regular endpoint if polling not supported)
-      final response = await _dio.post(
-        '/api/process-async', // Use async endpoint if available
-        data: formData,
-        options: Options(
-          headers: {'Content-Type': 'multipart/form-data'},
-          receiveTimeout: const Duration(seconds: 30), // Short timeout for starting
-        ),
-      );
-
-      return response.data;
-    } catch (e) {
-      print('❌ Start processing error: $e');
-      return {'success': false, 'error': e.toString()};
-    }
-  }
-
-  // Poll Processing Status
-  Future<ContentResponse> _pollProcessingStatus(
-      String requestId, {
-        Function(String)? onStatusUpdate,
-        int maxAttempts = 120, // 10 minutes with 5s interval
-        Duration pollInterval = const Duration(seconds: 5),
-      }) async {
-    int attempts = 0;
-
-    while (attempts < maxAttempts) {
-      try {
-        await Future.delayed(pollInterval);
-        attempts++;
-
-        final response = await _dio.get(
-          '/api/status/$requestId',
-          options: Options(
-            receiveTimeout: const Duration(seconds: 10),
-          ),
-        );
-
-        final status = response.data['status'];
-        final message = response.data['message'] ?? '';
-
-        onStatusUpdate?.call(message);
-
-        if (status == 'completed') {
-          // Processing completed
-          return ContentResponse.fromJson(response.data);
-        } else if (status == 'failed') {
-          // Processing failed
-          return ContentResponse(
-            success: false,
-            error: response.data['error'] ?? 'Processing failed',
-          );
-        }
-
-        // Still processing, continue polling
-        print('🔄 Polling... Attempt $attempts/$maxAttempts');
-      } catch (e) {
-        print('❌ Poll error: $e');
-        // Continue polling unless max attempts reached
-      }
-    }
-
-    // Timeout
-    return ContentResponse(
-      success: false,
-      error: 'Processing timeout. Please try again.',
-    );
-  }
-
-  // Original Process Content (Direct, with increased timeout)
+  // Process Content (JSON ONLY - FIXED)
   Future<ContentResponse> processContent(ContentRequest request) async {
     try {
-      FormData formData = FormData();
+      print('=' * 60);
+      print('🚀 API REQUEST START (JSON MODE)');
+      print('=' * 60);
 
-      // Add basic fields
-      formData.fields.add(MapEntry('grade', request.grade));
-      formData.fields.add(MapEntry('subject', request.subject));
-      formData.fields.add(MapEntry('topic', request.topic));
-      formData.fields.add(MapEntry('textbook', request.textbook ?? ''));
-      formData.fields.add(MapEntry('duration', request.duration ?? '45'));
-      formData.fields.add(MapEntry('teaching_style', request.teachingStyle ?? ''));
-      formData.fields.add(MapEntry('difficulty', request.difficulty ?? 'medium'));
-      formData.fields.add(MapEntry('additional_requirements', request.additionalRequirements ?? ''));
+      final payload = request.toJson();
 
-      // Add content_types
-      for (var contentType in request.contentTypes) {
-        formData.fields.add(MapEntry('content_type[]', contentType));
-      }
-
-      // Add configs
-      if (request.quizConfig != null) {
-        formData.fields.add(MapEntry(
-          'quiz_config',
-          jsonEncode(request.quizConfig!.toJson()),
-        ));
-      }
-
-      if (request.slideConfig != null) {
-        formData.fields.add(MapEntry(
-          'slide_config',
-          jsonEncode(request.slideConfig!.toJson()),
-        ));
-      }
-
-      // Add files
-      if (request.files != null && request.files!.isNotEmpty) {
-        for (var file in request.files!) {
-          String fileName = file.path.split('/').last;
-          formData.files.add(MapEntry(
-            'files[]',
-            await MultipartFile.fromFile(file.path, filename: fileName),
-          ));
-        }
-      }
-
-      print('📦 Sending request with content_types: ${request.contentTypes}');
+      print('📤 Sending JSON payload:');
+      print(const JsonEncoder.withIndent('  ').convert(payload));
 
       final response = await _dio.post(
         ApiConfig.process,
-        data: formData,
+        data: payload,
         options: Options(
-          headers: {'Content-Type': 'multipart/form-data'},
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+          },
         ),
-        onSendProgress: (sent, total) {
-          print('📤 Upload progress: ${(sent / total * 100).toStringAsFixed(0)}%');
-        },
       );
 
-      if (response.statusCode == 200) {
-        return ContentResponse.fromJson(response.data);
-      } else {
-        return ContentResponse(
-          success: false,
-          error: 'Server error: ${response.statusCode}',
-        );
+      print('=' * 60);
+      print('📥 API RESPONSE RECEIVED');
+      print('=' * 60);
+      print('Status: ${response.statusCode}');
+      print('Response type: ${response.data.runtimeType}');
+
+      if (response.data is Map) {
+        print('Response keys: ${(response.data as Map).keys.toList()}');
       }
+
+      if (response.statusCode == 200) {
+        final parsed = ContentResponse.fromJson(response.data);
+
+        print('=' * 60);
+        print('✅ RESPONSE PARSED');
+        print('=' * 60);
+        print('Success: ${parsed.success}');
+        print('Lesson Plan: ${parsed.lessonPlan != null ? '✅' : '❌'}');
+        print('Quiz: ${parsed.quiz != null ? '✅' : '❌'}');
+        print('Slide: ${parsed.slidePlan != null ? '✅' : '❌'}');
+        print('=' * 60);
+
+        return parsed;
+      }
+
+      return ContentResponse(
+        success: false,
+        error: 'Server error: ${response.statusCode}',
+      );
     } on DioException catch (e) {
-      print('❌ DioException: ${e.message}');
-      print('❌ Response: ${e.response?.data}');
+      print('❌ DIO ERROR: ${e.message}');
+      print('❌ RESPONSE: ${e.response?.data}');
       return ContentResponse(
         success: false,
         error: _handleDioError(e),
       );
-    } catch (e) {
-      print('❌ Error: $e');
+    } catch (e, stack) {
+      print('❌ UNEXPECTED ERROR: $e');
+      print(stack);
       return ContentResponse(
         success: false,
         error: 'Unexpected error: $e',
       );
     }
   }
+
 
   // Download File
   Future<String?> downloadFile(
@@ -281,6 +120,7 @@ class ApiService {
       }) async {
     try {
       final url = ApiConfig.downloadUrl(type, filename);
+      print('📥 Downloading from: $url');
 
       await _dio.download(
         url,
@@ -292,6 +132,7 @@ class ApiService {
         },
       );
 
+      print('✅ Downloaded to: $savePath');
       return savePath;
     } catch (e) {
       print('❌ Download error: $e');
@@ -358,59 +199,6 @@ class ApiService {
       return null;
     } catch (e) {
       print('❌ Chat error: $e');
-      return null;
-    }
-  }
-
-  // Generate Quiz (standalone)
-  Future<Map<String, dynamic>?> generateQuiz({
-    required String prompt,
-    required List<String> chunks,
-    required QuizConfig config,
-  }) async {
-    try {
-      final response = await _dio.post(
-        ApiConfig.generateQuizUrl,
-        data: {
-          'prompt': prompt,
-          'chunks': chunks,
-          'config': config.toJson(),
-        },
-      );
-
-      if (response.statusCode == 200) {
-        return response.data;
-      }
-
-      return null;
-    } catch (e) {
-      print('❌ Generate quiz error: $e');
-      return null;
-    }
-  }
-
-  // Generate Slide (standalone)
-  Future<Map<String, dynamic>?> generateSlide({
-    required Map<String, dynamic> lessonPlan,
-    required SlideConfig
-    config,
-  }) async {
-    try {
-      final response = await _dio.post(
-        ApiConfig.generateSlideUrl,
-        data: {
-          'lesson_plan': lessonPlan,
-          'config': config.toJson(),
-        },
-      );
-
-      if (response.statusCode == 200) {
-        return response.data;
-      }
-
-      return null;
-    } catch (e) {
-      print('❌ Generate slide error: $e');
       return null;
     }
   }

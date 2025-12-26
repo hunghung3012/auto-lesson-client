@@ -5,6 +5,7 @@ import '../../utils/constants.dart';
 import 'widgets/statistics_card.dart';
 import 'widgets/quick_action_card.dart';
 import 'widgets/recent_content_card.dart';
+import '../../main_screen.dart';
 
 class NewHomeScreen extends StatefulWidget {
   const NewHomeScreen({Key? key}) : super(key: key);
@@ -190,7 +191,8 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
                 subtitle: 'Kế hoạch, Quiz, Slide',
                 color: AppColors.primary,
                 onTap: () {
-                  Navigator.pushNamed(context, '/create-content');
+                  // ✅ FIX: Không dùng pushNamed, mà dùng navigate trong MainScreen
+                  _navigateToTab(context, 1); // Tab index 1 = Create Content
                 },
               ),
             ),
@@ -202,13 +204,25 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
                 subtitle: 'Trợ lý giảng dạy',
                 color: AppColors.secondary,
                 onTap: () {
-                  Navigator.pushNamed(context, '/chat');
+                  // ✅ FIX: Navigate đến tab Chat
+                  _navigateToTab(context, 3); // Tab index 3 = Chat
                 },
               ),
             ),
           ],
         ),
       ],
+    );
+  }
+
+  // ✅ Helper method để navigate đến tab trong MainScreen
+  void _navigateToTab(BuildContext context, int tabIndex) {
+    // Tìm MainScreen trong widget tree và gọi method navigate
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(
+        builder: (context) => MainScreen(initialIndex: tabIndex),
+      ),
+          (route) => false,
     );
   }
 
@@ -227,7 +241,8 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
             ),
             TextButton(
               onPressed: () {
-                Navigator.pushNamed(context, '/library');
+                // ✅ FIX: Navigate đến tab Library
+                _navigateToTab(context, 2); // Tab index 2 = Library
               },
               child: const Text('Xem tất cả'),
             ),

@@ -72,6 +72,8 @@ dependencies:
   markdown: ^7.1.1
   share_plus: ^7.2.1
   url_launcher: ^6.2.2
+#  open_file: ^3.3.2
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

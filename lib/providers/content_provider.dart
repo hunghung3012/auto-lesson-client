@@ -1,14 +1,10 @@
 import 'dart:convert';
-
-import 'package:edu_agent/models/content_request.dart';
-import 'package:edu_agent/services/notification_service.dart';
-import 'package:edu_agent/utils/constants.dart';
+import 'package:edu_agent/utils/json_utils.dart';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
-
+import '../models/content_request.dart';
 import '../services/api_service.dart';
 import '../services/storage_service.dart';
-
+import '../services/notification_service.dart';
 
 enum ContentStatus {
   idle,
@@ -62,14 +58,20 @@ class ContentProvider with ChangeNotifier {
       _errorMessage = null;
       notifyListeners();
 
-      // Simulate upload progress
       await _updateProgress(0.2, 'Đang xử lý yêu cầu...');
 
       _status = ContentStatus.processing;
       await _updateProgress(0.4, 'Đang phân tích nội dung...');
 
       // Call API
+      print('🚀 Calling API...');
       final response = await _apiService.processContent(request);
+
+      print('📦 API Response received:');
+      print('  - success: ${response.success}');
+      print('  - lessonPlan: ${response.lessonPlan != null ? '✅' : '❌'}');
+      print('  - quiz: ${response.quiz != null ? '✅' : '❌'}');
+      print('  - slidePlan: ${response.slidePlan != null ? '✅' : '❌'}');
 
       if (!response.success) {
         _status = ContentStatus.error;
@@ -84,6 +86,7 @@ class ContentProvider with ChangeNotifier {
       _lastResponse = response;
 
       // Save to storage
+      print('💾 Saving to storage...');
       await _saveResultsToStorage(response, request);
 
       await _updateProgress(0.9, 'Hoàn tất!');
@@ -93,12 +96,15 @@ class ContentProvider with ChangeNotifier {
       notifyListeners();
 
       await loadRecentContents();
+      print('✅ Content saved. Recent contents: ${_recentContents.length}');
 
-      // Show notification
+      // Show notifications
       await _showContentCreatedNotifications(response, request);
 
       return true;
-    } catch (e) {
+    } catch (e, stack) {
+      print('❌ Error in createContent: $e');
+      print('📜 Stack trace: $stack');
       _status = ContentStatus.error;
       _errorMessage = 'Lỗi: $e';
       notifyListeners();
@@ -114,66 +120,175 @@ class ContentProvider with ChangeNotifier {
     await Future.delayed(const Duration(milliseconds: 500));
   }
 
-  // Helper: Save Results to Storage
+  // Helper: Save Results to Storage (FIXED)
   Future<void> _saveResultsToStorage(
       ContentResponse response,
       ContentRequest request,
       ) async {
-    if (response.results == null) return;
+    print('💾 _saveResultsToStorage called');
+
+    final timestamp = DateTime.now();
 
     // Save Lesson Plan
-    if (response.results!.lessonPlan != null) {
-      final lesson = response.results!.lessonPlan!;
-      await _storageService.saveRecentContent(SavedContent(
-        id: DateTime.now().millisecondsSinceEpoch.toString(),
-        type: 'lesson_plan',
-        title: 'Kế hoạch: ${request.topic}',
-        subject: request.subject,
-        grade: request.grade,
-        filename: lesson.filename,
-        downloadUrl: lesson.downloadUrl,
-        createdAt: DateTime.now(),
-      ));
+    if (response.lessonPlan != null) {
+      print('📚 Saving lesson plan...');
+      final lesson = response.lessonPlan!;
+
+      try {
+        await _storageService.saveRecentContent(SavedContent(
+          id: '${timestamp.millisecondsSinceEpoch}_lesson',
+          type: 'lesson_plan',
+          title: 'Kế hoạch: ${request.topic}',
+          subject: request.subject,
+          grade: request.grade,
+          filename: lesson.displayFilename,
+          downloadUrl: lesson.downloadUrl ?? '',
+          createdAt: timestamp,
+          content: lesson.content, // ✅ Markdown content
+        ));
+        print('✅ Lesson plan saved');
+      } catch (e) {
+        print('❌ Error saving lesson plan: $e');
+      }
     }
 
-    // Save Quiz
-    if (response.results!.quiz != null) {
-      final quiz = response.results!.quiz!;
-      await _storageService.saveRecentContent(SavedContent(
-        id: DateTime.now().millisecondsSinceEpoch.toString(),
-        type: 'quiz',
-        title: 'Quiz: ${request.topic}',
-        subject: request.subject,
-        grade: request.grade,
-        filename: quiz.filename,
-        downloadUrl: quiz.downloadUrl,
-        createdAt: DateTime.now(),
-      ));
+    // ✅ Save Quiz - FIX TRIỆT ĐỂ
+    if (response.quiz != null) {
+      print('🧪 Saving quiz...');
+      final quiz = response.quiz!;
+
+      try {
+        String quizContentString = '';
+
+        // Priority 1: Use quizContent (structured data)
+        if (quiz.quizContent != null) {
+          print('  📦 Using quizContent (structured)');
+
+          try {
+            // ✅ Sử dụng JsonUtils để convert an toàn
+            final convertedMap = JsonUtils.convertToStringKeyMap(quiz.quizContent!);
+            quizContentString = jsonEncode(convertedMap);
+            print('  ✅ Converted successfully');
+          } catch (e) {
+            print('  ⚠️ Conversion failed: $e, using raw encode');
+            quizContentString = jsonEncode(quiz.quizContent);
+          }
+        }
+        // Priority 2: Use answerKey
+        else if (quiz.answerKey != null) {
+          print('  📦 Using answerKey');
+
+          try {
+            final answersMap = JsonUtils.convertToStringKeyMap(quiz.answerKey!);
+            final metadataMap = quiz.metadata != null
+                ? JsonUtils.convertToStringKeyMap(quiz.metadata!)
+                : <String, dynamic>{};
+
+            quizContentString = jsonEncode({
+              'answers': answersMap,
+              'explanation': <String, dynamic>{},
+              'statistics': metadataMap,
+            });
+            print('  ✅ Built from answerKey successfully');
+          } catch (e) {
+            print('  ⚠️ Failed to build from answerKey: $e');
+            quizContentString = jsonEncode({
+              'answers': quiz.answerKey,
+              'explanation': {},
+              'statistics': quiz.metadata ?? {},
+            });
+          }
+        }
+        // Priority 3: Try to parse content string
+        else if (quiz.content.isNotEmpty) {
+          print('  📦 Checking content string...');
+
+          if (quiz.content.trim().startsWith('{') || quiz.content.trim().startsWith('[')) {
+            print('  ℹ️ Content appears to be JSON');
+
+            try {
+              // ✅ Sử dụng JsonUtils.safeDecodeMap
+              final parsedMap = JsonUtils.safeDecodeMap(quiz.content);
+              quizContentString = jsonEncode(parsedMap);
+              print('  ✅ Parsed and converted successfully');
+            } catch (e) {
+              print('  ⚠️ Parse failed: $e, using raw content');
+              quizContentString = quiz.content;
+            }
+          } else {
+            // Markdown format
+            print('  ℹ️ Content is Markdown, wrapping in structure');
+            quizContentString = jsonEncode({
+              'answers': <String, dynamic>{},
+              'explanation': <String, dynamic>{},
+              'statistics': {'total_questions': 0},
+              'raw_content': quiz.content,
+            });
+          }
+        }
+
+        // Fallback: Create empty structure
+        if (quizContentString.isEmpty) {
+          print('  ⚠️ No valid content, creating empty structure');
+          quizContentString = jsonEncode({
+            'answers': <String, dynamic>{},
+            'explanation': <String, dynamic>{},
+            'statistics': {'total_questions': 0},
+          });
+        }
+
+        print('  📏 Final quiz content length: ${quizContentString.length}');
+
+        // ✅ Validate trước khi save
+        try {
+          final testDecode = JsonUtils.safeDecodeMap(quizContentString);
+          if (!JsonUtils.isValidQuizData(testDecode)) {
+            print('  ⚠️ Invalid quiz structure after processing');
+          }
+        } catch (e) {
+          print('  ⚠️ Validation failed: $e');
+        }
+
+        await _storageService.saveRecentContent(SavedContent(
+          id: '${timestamp.millisecondsSinceEpoch}_quiz',
+          type: 'quiz',
+          title: 'Quiz: ${request.topic}',
+          subject: request.subject,
+          grade: request.grade,
+          filename: quiz.displayFilename,
+          downloadUrl: quiz.downloadUrl ?? '',
+          createdAt: timestamp,
+          content: quizContentString, // ✅ JSON string đã được convert an toàn
+        ));
+        print('✅ Quiz saved successfully');
+      } catch (e, stackTrace) {
+        print('❌ Error saving quiz: $e');
+        print('📜 Stack: $stackTrace');
+      }
     }
 
     // Save Slide
-    if (response.results!.slide != null) {
-      final slide = response.results!.slide!;
-      await _storageService.saveRecentContent(SavedContent(
-        id: DateTime.now().millisecondsSinceEpoch.toString(),
-        type: 'slide_plan',
-        title: 'Slide: ${request.topic}',
-        subject: request.subject,
-        grade: request.grade,
-        filename: slide.filename,
-        downloadUrl: slide.downloadUrl,
-        createdAt: DateTime.now(),
-      ));
-    }
-  }
+    if (response.slidePlan != null) {
+      print('📊 Saving slide...');
+      final slide = response.slidePlan!;
 
-  // Delete Content
-  Future<bool> deleteContent(String id) async {
-    final result = await _storageService.deleteContent(id);
-    if (result) {
-      await loadRecentContents();
+      try {
+        await _storageService.saveRecentContent(SavedContent(
+          id: '${timestamp.millisecondsSinceEpoch}_slide',
+          type: 'slide_plan',
+          title: 'Slide: ${request.topic}',
+          subject: request.subject,
+          grade: request.grade,
+          filename: slide.displayFilename,
+          downloadUrl: slide.downloadUrl ?? '',
+          createdAt: timestamp,
+          content: slide.content, // ✅ Markdown content
+        ));
+        print('✅ Slide saved');
+      } catch (e) {
+        print('❌ Error saving slide: $e');
+      }
     }
-    return result;
   }
 
   // Search
@@ -211,83 +326,46 @@ class ContentProvider with ChangeNotifier {
       ContentResponse response,
       ContentRequest request,
       ) async {
-    if (response.results == null) return;
-
-    if (response.results!.lessonPlan != null) {
+    if (response.lessonPlan != null) {
       await _notificationService.showNotification(
         title: '✅ Đã tạo Kế hoạch bài giảng',
         body: request.topic,
       );
     }
 
-    if (response.results!.quiz != null) {
+    if (response.quiz != null) {
       await _notificationService.showNotification(
         title: '✅ Đã tạo Quiz',
         body: request.topic,
       );
     }
 
-    if (response.results!.slide != null) {
+    if (response.slidePlan != null) {
       await _notificationService.showNotification(
         title: '✅ Đã tạo Slide',
         body: request.topic,
       );
     }
   }
-  /// Load lesson plan content from server
-  Future<String> loadLessonPlanContent(String contentId) async {
+  // Delete Content
+  Future<bool> deleteContent(String contentId) async {
     try {
-      final content = _recentContents.firstWhere((c) => c.id == contentId);
-      final url = Uri.parse('${AppConstants.baseUrl}/api/download/lesson/${content.filename}');
+      print('🗑️ Deleting content: $contentId');
 
-      final response = await http.get(url);
+      await _storageService.deleteContent(contentId);
 
-      if (response.statusCode == 200) {
-        return utf8.decode(response.bodyBytes);
-      } else {
-        throw Exception('Failed to load lesson plan: ${response.statusCode}');
-      }
-    } catch (e) {
-      print('Error loading lesson plan: $e');
-      rethrow;
-    }
-  }
+      // cập nhật lại danh sách
+      _recentContents.removeWhere((c) => c.id == contentId);
+      notifyListeners();
 
-  /// Load quiz content from server
-  Future<Map<String, dynamic>> loadQuizContent(String contentId) async {
-    try {
-      final content = _recentContents.firstWhere((c) => c.id == contentId);
-      final url = Uri.parse('${AppConstants.baseUrl}/api/download/quiz/${content.filename}');
-
-      final response = await http.get(url);
-
-      if (response.statusCode == 200) {
-        return json.decode(utf8.decode(response.bodyBytes));
-      } else {
-        throw Exception('Failed to load quiz: ${response.statusCode}');
-      }
-    } catch (e) {
-      print('Error loading quiz: $e');
-      rethrow;
-    }
-  }
-
-  /// Load slide content from server
-  Future<String> loadSlideContent(String contentId) async {
-    try {
-      final content = _recentContents.firstWhere((c) => c.id == contentId);
-      final url = Uri.parse('${AppConstants.baseUrl}/api/download/slide/${content.filename}');
-
-      final response = await http.get(url);
-
-      if (response.statusCode == 200) {
-        return utf8.decode(response.bodyBytes);
-      } else {
-        throw Exception('Failed to load slide: ${response.statusCode}');
-      }
-    } catch (e) {
-      print('Error loading slide: $e');
-      rethrow;
+      print('✅ Content deleted');
+      return true;
+    } catch (e, stack) {
+      print('❌ Error deleting content: $e');
+      print('📜 Stack: $stack');
+      _errorMessage = 'Không thể xóa nội dung';
+      notifyListeners();
+      return false;
     }
   }
 

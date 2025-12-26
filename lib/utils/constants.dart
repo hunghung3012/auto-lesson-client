@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 
 class AppConstants {
-  static const String baseUrl = "http://192.168.1.5:5000";
+  // static const String baseUrl = "http://192.168.1.5:5000";
+  static const String baseUrl = "http://172.20.10.3:5000";
   // App Info
   static const String appName = 'EduMate';
   static const String appVersion = '1.0.0';
